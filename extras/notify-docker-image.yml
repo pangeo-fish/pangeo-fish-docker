@@ -1,0 +1,29 @@
+# Copy this file to pangeo-fish/pangeo-fish as
+# .github/workflows/notify-docker-image.yml
+#
+# On every push to main it asks pangeo-fish/pangeo-fish-docker to rebuild the
+# image right away (otherwise the daily scheduled check picks it up).
+#
+# Requires a repository secret DOCKER_IMAGE_DISPATCH_TOKEN in pangeo-fish:
+# a fine-grained personal access token (or GitHub App token) with access to
+# pangeo-fish/pangeo-fish-docker and the permission "Contents: Read and write".
+name: Trigger docker image rebuild
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  dispatch:
+    if: github.repository == 'pangeo-fish/pangeo-fish'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send repository_dispatch to pangeo-fish-docker
+        env:
+          GH_TOKEN: ${{ secrets.DOCKER_IMAGE_DISPATCH_TOKEN }}
+        run: |
+          gh api repos/pangeo-fish/pangeo-fish-docker/dispatches \
+            -f event_type=pangeo-fish-updated \
+            -f "client_payload[sha]=${{ github.sha }}"
