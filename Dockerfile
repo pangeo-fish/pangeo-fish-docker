@@ -14,7 +14,8 @@ ARG PANGEO_NOTEBOOK_TAG
 ARG PANGEO_FISH_REPO=https://github.com/pangeo-fish/pangeo-fish.git
 ARG PANGEO_FISH_REF=main
 ARG PYTHON_VERSION=3.11
-# pangeo-fish depends on torch; use the CPU-only wheels (CUDA wheels add several GB)
+# If pangeo-fish (or a dependency) pulls in torch, use the CPU-only wheels
+# (CUDA wheels add several GB)
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
 
 # The source is cloned outside of $HOME: on JupyterHub (pangeo-eosc) the home

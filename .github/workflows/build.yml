@@ -144,7 +144,7 @@ jobs:
       - name: Smoke test
         run: |
           docker run --rm --entrypoint "" "$IMAGE:$IMAGE_TAG" \
-            /srv/conda/envs/pangeo-fish/bin/python -c "import pangeo_fish, torch; print(pangeo_fish.__file__, torch.__version__)"
+            /srv/conda/envs/pangeo-fish/bin/python -c "import importlib.metadata as m, pangeo_fish; print(pangeo_fish.__file__, m.version('pangeo-fish'))"
           docker run --rm --entrypoint "" "$IMAGE:$IMAGE_TAG" \
             jupyter kernelspec list | tee /dev/stderr | grep -q pangeo-fish
 
