@@ -32,9 +32,10 @@ LABEL org.opencontainers.image.source="https://github.com/pangeo-fish/pangeo-fis
 
 # 1. Create the conda env (python 3.11). Binary libraries that are awkward to
 #    get from PyPI (eccodes C library) and git (for the git+https dependencies)
-#    come from conda-forge.
+#    come from conda-forge. ipywidgets is the kernel-side half of Jupyter
+#    widgets (the JupyterLab side is already in the notebook env).
 RUN mamba create -y -n ${PANGEO_FISH_ENV} \
-        python=${PYTHON_VERSION} pip git eccodes ipykernel \
+        python=${PYTHON_VERSION} pip git eccodes ipykernel ipywidgets \
     && mamba clean -afy
 
 # 2. Clone pangeo-fish at the requested ref (branch, tag or commit SHA).

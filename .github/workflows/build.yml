@@ -141,10 +141,13 @@ jobs:
             --tag "$IMAGE:$IMAGE_TAG" \
             .
 
+      # pangeo_fish.helpers imports most of the package (hmm.prediction, io, ...)
+      # and its third-party dependencies at module level, so importing it catches
+      # dependencies missing from pyproject.toml, not just a broken install.
       - name: Smoke test
         run: |
           docker run --rm --entrypoint "" "$IMAGE:$IMAGE_TAG" \
-            /srv/conda/envs/pangeo-fish/bin/python -c "import importlib.metadata as m, pangeo_fish; print(pangeo_fish.__file__, m.version('pangeo-fish'))"
+            /srv/conda/envs/pangeo-fish/bin/python -c "import importlib.metadata as m, pangeo_fish, pangeo_fish.helpers; print(pangeo_fish.__file__, m.version('pangeo-fish'))"
           docker run --rm --entrypoint "" "$IMAGE:$IMAGE_TAG" \
             jupyter kernelspec list | tee /dev/stderr | grep -q pangeo-fish
 

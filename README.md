@@ -31,7 +31,7 @@ See [`Dockerfile`](Dockerfile). It does the equivalent of
 
 ```bash
 git clone https://github.com/pangeo-fish/pangeo-fish.git /srv/pangeo-fish
-conda create -n pangeo-fish python=3.11 pip git eccodes ipykernel
+conda create -n pangeo-fish python=3.11 pip git eccodes ipykernel ipywidgets
 conda activate pangeo-fish
 pip install /srv/pangeo-fish        # torch, if needed, from the CPU-only index
 python -m ipykernel install --prefix /srv/conda/envs/notebook \
