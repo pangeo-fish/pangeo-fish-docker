@@ -8,6 +8,7 @@ JupyterLab as the kernel **"Python (pangeo-fish)"**.
 ```
 ghcr.io/pangeo-fish/pangeo-fish-notebook:latest
 ghcr.io/pangeo-fish/pangeo-fish-notebook:<pangeo-notebook tag>-<pangeo-fish short sha>
+ghcr.io/pangeo-fish/pangeo-fish-notebook:<pangeo-fish release tag>
 ```
 
 ## Use it on pangeo-eosc
@@ -49,12 +50,69 @@ the home directory is a persistent volume mounted over the image's `$HOME`.
 | Trigger | Behaviour |
 |---|---|
 | daily schedule | builds only if there is a new pangeo-notebook release **or** a new commit on pangeo-fish `main` (i.e. the tag `<notebook>-<sha>` does not exist yet) |
-| `repository_dispatch` (`pangeo-fish-updated`) | same, but immediately — sent by pangeo-fish on push to `main` (see [`extras/notify-docker-image.yml`](extras/notify-docker-image.yml)) |
+| `repository_dispatch` (`pangeo-fish-updated`) | immediately builds the supplied source commit if missing; a release notification also publishes its release tag |
 | push to `main` of this repo | always rebuilds and pushes |
 | pull request | builds and tests, does not push |
 | manual (`workflow_dispatch`) | optional `force`, pangeo-notebook tag and pangeo-fish ref |
 
 Each build runs a smoke test (`import pangeo_fish`, kernel registered) before pushing.
+
+`latest` tracks the current source `main` and is updated only by default-version
+builds. A delayed notification for an older commit cannot move it backwards.
+Manually pinned builds and release notifications do not update `latest`.
+
+Release notifications publish the exact release tag, including prerelease tags
+such as `v1.2.3-rc.1`. Release aliases are added even when the commit's tested
+image already exists, without downloading or rebuilding it. An existing release
+alias is never overwritten with a different digest. Distinct release
+notifications have separate concurrency groups so that pending releases are not
+replaced by a subsequent `main` notification.
+
+## Connect source events (one-time setup)
+
+Merge this repository's release-tag support before enabling the source workflow.
+Install [`extras/notify-docker-image.yml`](extras/notify-docker-image.yml) as
+`.github/workflows/notify-docker-image.yml` in `pangeo-fish/pangeo-fish`.
+It requests images on pushes to `main` and on GitHub Release publication
+(`release: published`, including prereleases).
+
+In the **source repository**, configure the Actions secret
+`DOCKER_IMAGE_DISPATCH_TOKEN`: a fine-grained personal access token (or GitHub App
+token) limited to `pangeo-fish/pangeo-fish-docker` with **Contents: Read and write**.
+The source repository's default `GITHUB_TOKEN` cannot dispatch to another
+repository. Renew the token before expiry. The Docker repository's own
+`GITHUB_TOKEN` is used for GHCR publication; no registry token is sent by the
+source workflow.
+
+The dispatch payload is:
+
+```json
+{
+  "event_type": "pangeo-fish-updated",
+  "client_payload": {
+    "sha": "<full 40-character source commit SHA>",
+    "release_tag": "v1.2.3"
+  }
+}
+```
+
+For a `main` push, omit `release_tag` or set it to an empty string. Release tags
+must be valid Docker tags (at most 128 ASCII letters, digits, underscores,
+periods, or hyphens; first character must be a letter, digit, or underscore).
+`latest` is reserved for `main`. Annotated source tags are resolved to their
+underlying commit when used as a manual `pangeo_fish_ref`.
+
+The source workflow confirms request acceptance. Check this repository's
+**Build and publish image** run for the actual build and publication result.
+Rerun a failed source notification after fixing its secret; rerun a failed
+Docker workflow here. The daily fallback still checks `main` and base-image
+updates, but does not recover missed release notifications.
+
+Workflow logic can be checked without Docker or network access:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
 
 ## Build locally
 
