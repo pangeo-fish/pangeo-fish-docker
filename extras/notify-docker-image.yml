@@ -1,17 +1,11 @@
-# Copy this file to pangeo-fish/pangeo-fish as
-# .github/workflows/notify-docker-image.yml
-#
-# On every push to main it asks pangeo-fish/pangeo-fish-docker to rebuild the
-# image right away (otherwise the daily scheduled check picks it up).
-#
-# Requires a repository secret DOCKER_IMAGE_DISPATCH_TOKEN in pangeo-fish:
-# a fine-grained personal access token (or GitHub App token) with access to
-# pangeo-fish/pangeo-fish-docker and the permission "Contents: Read and write".
-name: Trigger docker image rebuild
+# Install in pangeo-fish/pangeo-fish. Setup: see the Docker repository README.
+name: Trigger Docker image publication
 
 on:
   push:
     branches: [main]
+  release:
+    types: [published]
 
 permissions: {}
 
@@ -20,10 +14,17 @@ jobs:
     if: github.repository == 'pangeo-fish/pangeo-fish'
     runs-on: ubuntu-latest
     steps:
-      - name: Send repository_dispatch to pangeo-fish-docker
+      - name: Notify pangeo-fish-docker
         env:
           GH_TOKEN: ${{ secrets.DOCKER_IMAGE_DISPATCH_TOKEN }}
+          SOURCE_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
         run: |
-          gh api repos/pangeo-fish/pangeo-fish-docker/dispatches \
-            -f event_type=pangeo-fish-updated \
-            -f "client_payload[sha]=${{ github.sha }}"
+          set -euo pipefail
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::Set DOCKER_IMAGE_DISPATCH_TOKEN as documented in docs/docker-images.md"
+            exit 1
+          fi
+          jq -n --arg sha "$SOURCE_SHA" --arg release_tag "$RELEASE_TAG" \
+            '{event_type: "pangeo-fish-updated", client_payload: {sha: $sha, release_tag: $release_tag}}' \
+            | gh api --method POST repos/pangeo-fish/pangeo-fish-docker/dispatches --input -

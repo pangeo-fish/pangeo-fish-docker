@@ -8,7 +8,7 @@ on:
   # daily check for a new pangeo-notebook release or a new pangeo-fish commit
   schedule:
     - cron: "0 4 * * *"
-  # immediate rebuild, sent by pangeo-fish/pangeo-fish on push to main
+  # sent by pangeo-fish on main pushes and published releases
   # (see extras/notify-docker-image.yml)
   repository_dispatch:
     types: [pangeo-fish-updated]
@@ -28,62 +28,49 @@ on:
         default: ""
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}
+  # Keep distinct releases out of the replaceable pending main-build queue.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.event.client_payload.release_tag && format('release-{0}', github.event.client_payload.release_tag) || 'publish' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
-  packages: write
 
 env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/pangeo-fish-notebook
   PANGEO_FISH_REPO: https://github.com/pangeo-fish/pangeo-fish.git
 
 jobs:
+  check-workflow:
+    name: Test image workflow
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 -m unittest discover -s tests -v
+
   resolve:
     name: Resolve versions
+    needs: check-workflow
+    permissions:
+      contents: read
+      packages: read
     runs-on: ubuntu-latest
     outputs:
       notebook_tag: ${{ steps.versions.outputs.notebook_tag }}
       fish_sha: ${{ steps.versions.outputs.fish_sha }}
       image_tag: ${{ steps.versions.outputs.image_tag }}
       is_default: ${{ steps.versions.outputs.is_default }}
+      release_tag: ${{ steps.versions.outputs.release_tag }}
       build: ${{ steps.check.outputs.build }}
     steps:
+      - uses: actions/checkout@v7
       - name: Resolve pangeo-notebook tag and pangeo-fish commit
         id: versions
         env:
           INPUT_NOTEBOOK_TAG: ${{ inputs.pangeo_notebook_tag }}
           INPUT_FISH_REF: ${{ inputs.pangeo_fish_ref }}
           PAYLOAD_SHA: ${{ github.event.client_payload.sha }}
-        run: |
-          set -euo pipefail
-
-          notebook_tag="${INPUT_NOTEBOOK_TAG:-}"
-          if [ -z "$notebook_tag" ]; then
-            # latest dated release, e.g. 2026.06.04 (ignores "master" and commit-SHA tags)
-            notebook_tag=$(curl -fsSL 'https://hub.docker.com/v2/repositories/pangeo/pangeo-notebook/tags?page_size=100&ordering=last_updated' \
-              | jq -r '.results[].name' \
-              | grep -E '^[0-9]{4}\.[0-9]{2}\.[0-9]{2}$' \
-              | sort -V | tail -n1)
-          fi
-
-          fish_ref="${INPUT_FISH_REF:-${PAYLOAD_SHA:-main}}"
-          fish_sha=$(git ls-remote "$PANGEO_FISH_REPO" "refs/heads/$fish_ref" "refs/tags/$fish_ref" | head -n1 | cut -f1)
-          # not a branch or tag: assume it is already a commit SHA
-          fish_sha="${fish_sha:-$fish_ref}"
-
-          is_default=false
-          if [ -z "$INPUT_NOTEBOOK_TAG" ] && [ -z "$INPUT_FISH_REF" ]; then
-            is_default=true
-          fi
-
-          {
-            echo "notebook_tag=$notebook_tag"
-            echo "fish_sha=$fish_sha"
-            echo "image_tag=${notebook_tag}-${fish_sha:0:7}"
-            echo "is_default=$is_default"
-          } | tee -a "$GITHUB_OUTPUT"
+          PAYLOAD_RELEASE_TAG: ${{ github.event.client_payload.release_tag }}
+        run: python3 scripts/image_workflow.py resolve
 
       - name: Log in to ghcr.io
         if: github.event_name != 'pull_request'
@@ -116,11 +103,13 @@ jobs:
     needs: resolve
     if: needs.resolve.outputs.build == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     env:
       NOTEBOOK_TAG: ${{ needs.resolve.outputs.notebook_tag }}
       FISH_SHA: ${{ needs.resolve.outputs.fish_sha }}
       IMAGE_TAG: ${{ needs.resolve.outputs.image_tag }}
-      IS_DEFAULT: ${{ needs.resolve.outputs.is_default }}
     steps:
       # pangeo-notebook + torch is too large for the default runner disk
       - name: Free disk space
@@ -159,39 +148,64 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push to ghcr.io
+      - name: Push tested image to ghcr.io
         if: github.event_name != 'pull_request'
         run: |
-          tags=("$IMAGE_TAG")
-          # "latest" only for builds of the default versions (not manual pins)
-          if [ "$IS_DEFAULT" = true ]; then
-            tags+=("latest")
-          fi
-          for tag in "${tags[@]}"; do
-            docker tag "$IMAGE:$IMAGE_TAG" "$IMAGE:$tag"
-            docker push "$IMAGE:$tag"
-            echo "- \`$IMAGE:$tag\`" >> "$GITHUB_STEP_SUMMARY"
-          done
+          docker push "$IMAGE:$IMAGE_TAG"
+          echo "- \`$IMAGE:$IMAGE_TAG\`" >> "$GITHUB_STEP_SUMMARY"
 
-      # Optional mirror to Docker Hub: set the repository variable DOCKERHUB_IMAGE
-      # (e.g. "pangeofish/pangeo-fish-notebook") and the secrets
-      # DOCKERHUB_USERNAME / DOCKERHUB_TOKEN.
+  publish:
+    name: Publish image aliases
+    needs: [resolve, build]
+    # An existing tested image can receive a release tag without rebuilding.
+    if: >-
+      always() && !cancelled() && github.event_name != 'pull_request' &&
+      needs.resolve.result == 'success' &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE_TAG: ${{ needs.resolve.outputs.image_tag }}
+      FISH_SHA: ${{ needs.resolve.outputs.fish_sha }}
+      IS_DEFAULT: ${{ needs.resolve.outputs.is_default }}
+      RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish latest or release tag
+        id: aliases
+        run: python3 scripts/image_workflow.py publish
+
+      # Preserve the optional Docker Hub mirror, including release aliases.
       - name: Log in to Docker Hub
-        if: github.event_name != 'pull_request' && vars.DOCKERHUB_IMAGE != ''
+        if: >-
+          vars.DOCKERHUB_IMAGE != '' &&
+          (needs.build.result == 'success' || steps.aliases.outputs.changed == 'true')
         uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Push to Docker Hub
-        if: github.event_name != 'pull_request' && vars.DOCKERHUB_IMAGE != ''
+      - name: Mirror image and aliases to Docker Hub
+        if: >-
+          vars.DOCKERHUB_IMAGE != '' &&
+          (needs.build.result == 'success' || steps.aliases.outputs.changed == 'true')
         env:
           DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
+          ALIASES: ${{ steps.aliases.outputs.aliases }}
         run: |
+          docker pull "$IMAGE:$IMAGE_TAG"
           tags=("$IMAGE_TAG")
-          if [ "$IS_DEFAULT" = true ]; then
-            tags+=("latest")
-          fi
+          while IFS= read -r alias; do
+            tags+=("$alias")
+          done < <(jq -r '.[]' <<< "$ALIASES")
           for tag in "${tags[@]}"; do
             docker tag "$IMAGE:$IMAGE_TAG" "$DOCKERHUB_IMAGE:$tag"
             docker push "$DOCKERHUB_IMAGE:$tag"
