@@ -28,9 +28,10 @@ on:
         default: ""
 
 concurrency:
-  # Keep distinct releases out of the replaceable pending main-build queue.
+  # Keep releases in per-tag groups and retain pending runs in the publish group.
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.event.client_payload.release_tag && format('release-{0}', github.event.client_payload.release_tag) || 'publish' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  queue: ${{ github.event_name != 'pull_request' && !github.event.client_payload.release_tag && 'max' || 'single' }}
 
 permissions:
   contents: read
