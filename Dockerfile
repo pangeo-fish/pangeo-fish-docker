@@ -60,3 +60,13 @@ RUN ${PANGEO_FISH_PREFIX}/bin/python -m ipykernel install \
         --name pangeo-fish \
         --display-name "Python (pangeo-fish)" \
     && jupyter kernelspec list
+
+# 5. JupyterLab draws the cells that are outside the visible part of a
+#    notebook lazily ("windowing"). With the mode "full", figures created while
+#    their cell is off screen (after "Run All") come out empty: hvplot/Bokeh
+#    shows only frames, map widgets show no map. "defer" attaches every cell
+#    and avoids this. Users can still change it in Settings > Notebook.
+RUN mkdir -p ${NB_PYTHON_PREFIX}/share/jupyter/lab/settings \
+    && printf '%s\n' '{"@jupyterlab/notebook-extension:tracker": {"windowingMode": "defer"}}' \
+        > ${NB_PYTHON_PREFIX}/share/jupyter/lab/settings/overrides.json \
+    && python -c "import json, os; p = os.environ['NB_PYTHON_PREFIX'] + '/share/jupyter/lab'; o = json.load(open(p + '/settings/overrides.json')); s = json.load(open(p + '/schemas/@jupyterlab/notebook-extension/tracker.json')); m = o['@jupyterlab/notebook-extension:tracker']['windowingMode']; assert m in s['properties']['windowingMode']['enum'], s['properties']['windowingMode']; print('windowingMode override:', m, '(JupyterLab default:', s['properties']['windowingMode'].get('default'), ')')"
