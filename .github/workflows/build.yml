@@ -140,6 +140,8 @@ jobs:
             /srv/conda/envs/pangeo-fish/bin/python -c "import importlib.metadata as m, pangeo_fish, pangeo_fish.helpers; print(pangeo_fish.__file__, m.version('pangeo-fish'))"
           docker run --rm --entrypoint "" "$IMAGE:$IMAGE_TAG" \
             jupyter kernelspec list | tee /dev/stderr | grep -q pangeo-fish
+          docker run --rm --entrypoint "" "$IMAGE:$IMAGE_TAG" \
+            sh -c 'cat "$NB_PYTHON_PREFIX/share/jupyter/lab/settings/overrides.json"' | tee /dev/stderr | grep -q '"windowingMode": "defer"'
 
       - name: Log in to ghcr.io
         if: github.event_name != 'pull_request'
