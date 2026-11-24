@@ -31,11 +31,15 @@ LABEL org.opencontainers.image.source="https://github.com/pangeo-fish/pangeo-fis
       io.github.pangeo-fish.pangeo-notebook-tag="${PANGEO_NOTEBOOK_TAG}"
 
 # 1. Create the conda env (python 3.11). Binary libraries that are awkward to
-#    get from PyPI (eccodes C library) and git (for the git+https dependencies)
-#    come from conda-forge. ipywidgets is the kernel-side half of Jupyter
-#    widgets (the JupyterLab side is already in the notebook env).
+#    get from PyPI (eccodes C library; pyfes, which PyPI only has as source)
+#    and git (for the git+https dependencies) come from conda-forge.
+#    ipywidgets is the kernel-side half of Jupyter widgets (the JupyterLab side
+#    is already in the notebook env). pyfes is the optional "tide" dependency
+#    of pangeo-fish (pangeo-fish[tide]), needed by the tide methods of the
+#    complete demo.
 RUN mamba create -y -n ${PANGEO_FISH_ENV} \
         python=${PYTHON_VERSION} pip git eccodes ipykernel ipywidgets \
+        "pyfes>=2026.10" \
     && mamba clean -afy
 
 # 2. Clone pangeo-fish at the requested ref (branch, tag or commit SHA).

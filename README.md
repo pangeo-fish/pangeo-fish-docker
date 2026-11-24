@@ -32,7 +32,7 @@ See [`Dockerfile`](Dockerfile). It does the equivalent of
 
 ```bash
 git clone https://github.com/pangeo-fish/pangeo-fish.git /srv/pangeo-fish
-conda create -n pangeo-fish python=3.11 pip git eccodes ipykernel ipywidgets
+conda create -n pangeo-fish python=3.11 pip git eccodes ipykernel ipywidgets "pyfes>=2026.10"
 conda activate pangeo-fish
 pip install /srv/pangeo-fish        # torch, if needed, from the CPU-only index
 python -m ipykernel install --prefix /srv/conda/envs/notebook \
@@ -55,7 +55,7 @@ the home directory is a persistent volume mounted over the image's `$HOME`.
 | pull request | builds and tests, does not push |
 | manual (`workflow_dispatch`) | optional `force`, pangeo-notebook tag and pangeo-fish ref |
 
-Each build runs a smoke test (`import pangeo_fish`, kernel registered) before pushing.
+Each build runs a smoke test (`import pangeo_fish`, `import pyfes`, kernel registered) before pushing.
 
 `latest` tracks the current source `main` and is updated only by default-version
 builds. A delayed notification for an older commit cannot move it backwards.
